@@ -95,7 +95,7 @@ EOSQL
                 *.sql) echo "Running $f"; $PSQL_CMD -f "$f" ;;
                 *)     echo "Ignoring $f" ;;
             esac
-        done 2>/dev/null || true
+        done # Preserve errors
 
         pg_ctl -D "$PGDATA" -m fast -w stop
 
