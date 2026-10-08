@@ -1,5 +1,7 @@
 #!/bin/sh
 set -e
+POSTGRES_USER="${POSTGRES_USER:-postgres}"
+POSTGRES_DB="${POSTGRES_DB:-$POSTGRES_USER}"
 
 # Run as postgres user if started as root
 if [ "$(id -u)" = '0' ]; then
