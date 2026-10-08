@@ -39,9 +39,41 @@ if [ "$1" = 'postgres' ] && [ -z "$(ls -A "$PGDATA" 2>/dev/null)" ]; then
 
     # Create additional user/database if specified
     if [ -n "$POSTGRES_DB" ] || [ -n "$POSTGRES_USER" ]; then
-        # Temporarily allow local connections without password for setup
+        # Back up authentication settings before changing them 
         HBA_BACKUP="$PGDATA/pg_hba.conf.backup"
         cp "$PGDATA/pg_hba.conf" "$HBA_BACKUP"
+        
+        cleanup() {
+            status=$?
+            trap - EXIT HUP INT TERM
+            set +e
+
+            # A failed pg_ctl start can still leave a server running
+            if pg_ctl -D "$PGDATA" status >/dev/null 2>/dev/null; then
+                pg_ctl -D "$PGDATA" -m fast -w stop
+                stop_status=$?
+                if [ "$stop_status" -ne 0 ]; then
+                    echo "Failed to stop temporary Postgresql server" >&2
+                    [ "$status" -ne 0 ] || status=$stop_status
+                fi
+            fi
+
+            # Restore
+            mv "$HBA_BACKUP" "$PGDATA/pg_hba.conf"
+            restore_status=$?
+            if [ "$restore_status" -ne 0 ]; then
+                echo "Failed to restore Postgresql authentication" >&2
+                [ "$status" -ne 0 ] || status=$restore_status
+            fi
+            exit "$status"
+        }
+
+        trap cleanup EXIT
+        trap 'exit 129' HUP
+        trap 'exit 130' INT
+        trap 'exit 143' TERM
+
+        # Temporarily allow local connections without password for setup
         echo "local all all trust" > "$PGDATA/pg_hba.conf"
         echo "host all all all trust" >> "$PGDATA/pg_hba.conf"
 
@@ -69,6 +101,9 @@ EOSQL
 
         # Restore original pg_hba.conf with proper authentication
         mv "$HBA_BACKUP" "$PGDATA/pg_hba.conf"
+        
+        # Disable cleanup after successful setup 
+        trap - EXIT HUP INT TERM
     fi
 
     echo "PostgreSQL init complete; ready for start up."
